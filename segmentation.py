@@ -1,7 +1,7 @@
 import numpy as np
 import cv2 
 import glob
-from sklearn.cluster import DBSCAN
+from matplotlib import pyplot as plt
 
 
 def differ(rho, theta, marks_rhos, marks_thetas):
@@ -52,60 +52,76 @@ def CoM(img):
 	return (int(x), int(y))
 
 bg = cv2.imread("images/background.png", 0)
-for file in glob.glob("images/*"):
-	img = cv2.imread(file, 0)
-	seg = img[50:img.shape[0] - 50]
-	seg = seg - cv2.GaussianBlur(seg,(51,51),0)
+fourcc = cv2.VideoWriter_fourcc(*'XVID')
+out = cv2.VideoWriter('output.avi',fourcc, 20.0, (640,480))
+cap = cv2.VideoCapture("best_res.avi")
+k = 0
+while True:
+	try:
+		ret, img = cap.read()
+		seg = np.copy(img)
+		seg = seg - cv2.GaussianBlur(seg,(51,51),0)
 
-	ker_size = 13
-	kernel = np.ones((ker_size,ker_size),np.float32)/ker_size**2
-	#seg = cv2.filter2D(seg,-1,kernel)
-	seg = cv2.Canny(seg, 130, 180)
-	kernel = np.ones((7,7),np.uint8)
-	seg = cv2.dilate(seg, kernel, iterations = 1)
-	seg = 255 - seg
-	seg = cv2.medianBlur(seg,3)
-	seg = cv2.dilate(seg, kernel, iterations = 1)
+		ker_size = 13
+		kernel = np.ones((ker_size,ker_size),np.float32)/ker_size**2
+		#seg = cv2.filter2D(seg,-1,kernel)
+		seg = cv2.Canny(seg, 130, 180)
+		kernel = np.ones((7,7),np.uint8)
+		seg = cv2.dilate(seg, kernel, iterations = 1)
+		seg = 255 - seg
+		seg = cv2.medianBlur(seg,3)
+		#seg = cv2.dilate(seg, kernel, iterations = 1)
 
-	com = CoM(seg)
-	lines = cv2.HoughLines(seg,1,np.pi/180,150)
-	thetas = []
-	rhos = []
-	for l in lines[0:20]:
-		for rho,theta in l:
-			a = np.cos(theta)
-			b = np.sin(theta)
-			x0 = a*rho
-			y0 = b*rho
-			x1 = int(x0 + 10000*(-b))
-			y1 = int(y0 + 10000*(a))
-			x2 = int(x0 - 10000*(-b))
-			y2 = int(y0 - 10000*(a))
-			if differ(rho, theta, rhos, thetas):
-					cv2.line(seg, (x1, y1), (x2, y2), [255, 0, 0], 1)
-					thetas.append(theta)
-					rhos.append(rho)
+		com = CoM(seg)
+		thrs = int(np.sum(seg) // 31000)
+		print(thrs)
+		lines = cv2.HoughLines(seg,1,np.pi/180,thrs)
+		thetas = []
+		rhos = []
+		for l in lines[0:20]:
+			for rho,theta in l:
+				a = np.cos(theta)
+				b = np.sin(theta)
+				x0 = a*rho
+				y0 = b*rho
+				x1 = int(x0 + 10000*(-b))
+				y1 = int(y0 + 10000*(a))
+				x2 = int(x0 - 10000*(-b))
+				y2 = int(y0 - 10000*(a))
+				if differ(rho, theta, rhos, thetas):
+						cv2.line(seg, (x1, y1), (x2, y2), [255, 0, 0], 1)
+						thetas.append(theta)
+						rhos.append(rho)
 
-			#cv2.line(seg,(x1,y1),(x2,y2),255,2)
- 
-	found = False
-	for i in range(0, len(rhos)):
-		for j in range(0, len(rhos)):
-			if abs(thetas[i] - thetas[j]) > 0.5:
-				p = intersection([rhos[i], thetas[i]], [rhos[j], thetas[j]])
-				theta_x = min(thetas[i], thetas[j])
-				theta_y = max(thetas[i], thetas[j])
-				px = (int(p[0] + np.sign(com[0] - p[0]) * 100 * np.cos(theta_x)), int(p[1] + np.sign(com[1] - p[1]) * 100 * np.sin(theta_x)))
-				py = (int(p[0] + np.sign(com[0] - p[0]) * 100 * np.cos(theta_y)), int(p[1] + np.sign(com[1] - p[1]) * 100 * np.sin(theta_y)))
-				cv2.circle(seg, p, 20, (255, 0, 0), thickness=-1)
-				cv2.circle(seg, px, 20, (255, 0, 0), thickness=-1)
-				cv2.circle(seg, py, 20, (255, 0, 0), thickness=-1)
-				found = True
+				#cv2.line(seg,(x1,y1),(x2,y2),255,2)
+		cv2.imwrite("res.png", seg)
+		found = False
+		seg = cv2.cvtColor(seg, cv2.COLOR_GRAY2RGB)
+		for i in range(0, len(rhos)):
+			for j in range(0, len(rhos)):
+				if abs(thetas[i] - thetas[j]) > 0.5:
+					p = intersection([rhos[i], thetas[i]], [rhos[j], thetas[j]])
+					theta_x = min(thetas[i], thetas[j])
+					theta_y = max(thetas[i], thetas[j])
+					px = (int(p[0] + np.sign(com[0] - p[0]) * 100 * np.cos(theta_x)), int(p[1] + np.sign(com[1] - p[1]) * 100 * np.sin(theta_x)))
+					py = (int(p[0] + np.sign(com[0] - p[0]) * 100 * np.cos(theta_y)), int(p[1] + np.sign(com[1] - p[1]) * 100 * np.sin(theta_y)))
+					cv2.circle(seg, p, 20, (255, 0, 0), thickness=-1)
+					cv2.circle(seg, px, 20, (255, 0, 0), thickness=-1)
+					cv2.circle(seg, py, 20, (255, 0, 0), thickness=-1)
+					found = True
+					break
+			if found:
 				break
-		if found:
-			break
-	cv2.imwrite("segmented/" + file.split("/")[1], seg)
-	print("Edge pos: ", p)
-	print("X axis (two points): ", p, px)
-	print("Y axis (two points): ", p, py)
-	print()
+		out.write(seg)
+		seg = np.concatenate([img, seg])
+		cv2.imwrite("segmented/" + str(k) + ".png", seg)
+		k += 1
+
+		print("Edge pos: ", p)
+		print("X axis (two points): ", p, px)
+		print("Y axis (two points): ", p, py)
+		print()
+	except KeyboardInterrupt:
+		cap.release()
+		out.release()
+		break
